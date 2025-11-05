@@ -1,13 +1,13 @@
 import streamlit as st
 import pandas as pd
 
-# Create connection
 conn = st.connection("neon", type="sql")
 
-st.title("Test Neon ↔ Streamlit Connection")
+st.title("Neon Test — Read + Insert")
 
-# Query simple data
-df = conn.query("SELECT * FROM test_data;", ttl=0)
+if st.button("Insert New Row"):
+    conn.query("INSERT INTO test_data (message) VALUES ('Streamlit Cloud Insert Test');", ttl=0)
+    st.success("✅ Inserted!")
 
-st.write("✅ Connected & Query Success")
+df = conn.query("SELECT * FROM test_data ORDER BY id DESC;", ttl=0)
 st.dataframe(df)
