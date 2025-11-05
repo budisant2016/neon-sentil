@@ -1,14 +1,13 @@
 import streamlit as st
 import pandas as pd
 
+# Create connection
 conn = st.connection("neon", type="sql")
 
-# Untuk complex queries
-with conn.session as session:
-    result = session.execute("SELECT COUNT(*) FROM users")
-    user_count = result.scalar()
-    st.metric("Total Users", user_count)
+st.title("Test Neon ↔ Streamlit Connection")
 
-# Untuk simple queries (recommended)
-df = conn.query("SELECT * FROM active_sessions WHERE status = 'active'")
+# Query simple data
+df = conn.query("SELECT * FROM test_data;", ttl=0)
+
+st.write("✅ Connected & Query Success")
 st.dataframe(df)
