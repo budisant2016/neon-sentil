@@ -1,3 +1,4 @@
+import streamlit as st
 from modules.db_validator import validate_tables
 
 st.write("🔧 Validating database schema...")
