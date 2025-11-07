@@ -1,6 +1,9 @@
 from modules.queue_manager import get_next_request, update_request_status
 from modules.session_manager import acquire_session_slot, release_session_slot
 import streamlit as st
+
+from modules.db_validator import validate_tables
+
 st.title("🧠 Sentil.AI — Adaptive Tier Queue System")
 
 tier = st.selectbox("Pilih Tier", [1, 2, 3], index=0)
