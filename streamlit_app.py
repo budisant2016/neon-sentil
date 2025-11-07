@@ -1,2 +1,2 @@
-import config.db_config as db
-db.test_connection()
+import os
+print("ENV:", os.environ.keys())
