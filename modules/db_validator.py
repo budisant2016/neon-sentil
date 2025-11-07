@@ -1,8 +1,6 @@
-# modules/db_validator.py
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from config.db_config import engine
 
-# Daftar struktur minimal per tabel
 TABLE_SCHEMAS = {
     "users": {
         "columns": {
@@ -67,7 +65,7 @@ def validate_tables():
         for table, info in TABLE_SCHEMAS.items():
             print(f"🔍 Checking table: {table}")
 
-            # Cek apakah tabel ada
+            # Cek apakah tabel sudah ada
             result = conn.execute(
                 text("SELECT to_regclass(:tname)"), {"tname": table}
             ).scalar()
@@ -81,18 +79,23 @@ def validate_tables():
             else:
                 # Cek kolom per kolom
                 existing_cols = conn.execute(
-                    text(f"""
-                    SELECT column_name FROM information_schema.columns
-                    WHERE table_name = :tname
-                    """),
-                    {"tname": table},
-                ).fetchall()
-
+                    text("""
+                        SELECT column_name FROM information_schema.columns
+                        WHERE table_name = :tname
+                    """), {"tname": table}).fetchall()
                 existing_cols = [r[0] for r in existing_cols]
+
                 for col, dtype in info["columns"].items():
                     if col not in existing_cols:
-                        print(f"➕ Adding missing column '{col}' to {table}")
-                        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {dtype};"))
-                        conn.commit()
-                print(f"✅ Table {table} validated and up to date.")
-        print("🎉 All tables validated successfully.")
+                        # Deteksi tipe kolom kompleks
+                        if any(keyword in dtype for keyword in ["REFERENCES", "GENERATED", "CHECK"]):
+                            print(f"⚠️ Skipping complex column '{col}' on {table} (manual creation required)")
+                            continue
+                        try:
+                            conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {dtype};"))
+                            conn.commit()
+                            print(f"➕ Added column '{col}' to {table}")
+                        except Exception as e:
+                            print(f"❌ Failed to add column '{col}' on {table}: {e}")
+                print(f"✅ Table {table} validated.")
+        print("🎉 Database validation finished.")
