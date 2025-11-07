@@ -1,9 +1,23 @@
+# streamlit_app.py
 import streamlit as st
-from sqlalchemy import create_engine
+from modules.queue_manager import get_next_request, update_request_status
+from modules.sentiment_processor import analyze_sentiment
+from modules.result_writer import write_result
 
-try:
-    DB_URL = st.secrets["connections"]["NEON_DB_URL"]
-except KeyError:
-    raise ValueError("❌ NEON_DB_URL belum diset di Streamlit Secrets!")
+st.title("🚀 Sentil Backend Monitor")
 
-engine = create_engine(DB_URL)
+tier = st.selectbox("Pilih Tier", [1, 2, 3])
+
+if st.button("Proses Antrian Tier Ini"):
+    req = get_next_request(tier)
+    if not req:
+        st.warning("Tidak ada antrian pending.")
+    else:
+        st.write(f"Memproses request ID: {req.request_id}")
+        update_request_status(req.request_id, "processing")
+
+        result = analyze_sentiment(req.text_data, req.method)
+        write_result(req.request_id, result)
+
+        update_request_status(req.request_id, "done")
+        st.success(f"Selesai → Sentimen: {result['sentiment']} ({result['confidence']*100:.1f}%)")
