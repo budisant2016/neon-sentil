@@ -1,101 +1,72 @@
+# modules/db_validator.py
+import sqlalchemy
 from sqlalchemy import text
-from config.db_config import engine
+from config.db_config import get_connection
 
-TABLE_SCHEMAS = {
-    "users": {
-        "columns": {
+def validate_tables():
+    print("🔧 Validating database schema...")
+
+    expected_tables = {
+        "users": {
             "user_id": "UUID PRIMARY KEY DEFAULT gen_random_uuid()",
-            "username": "VARCHAR(100)",
-            "email": "VARCHAR(200)",
+            "username": "VARCHAR(100) NOT NULL UNIQUE",
+            "email": "VARCHAR(150)",
             "tier": "SMALLINT DEFAULT 1",
-            "created_at": "TIMESTAMP DEFAULT NOW()"
-        }
-    },
-    "request_queue": {
-        "columns": {
+            "created_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+        },
+        "request_queue": {
             "request_id": "UUID PRIMARY KEY DEFAULT gen_random_uuid()",
             "user_id": "UUID REFERENCES users(user_id)",
+            "text_input": "TEXT",
             "tier": "SMALLINT DEFAULT 1",
-            "status": "VARCHAR(50) DEFAULT 'pending'",
-            "payload": "TEXT",
-            "created_at": "TIMESTAMP DEFAULT NOW()"
-        }
-    },
-    "response_log": {
-        "columns": {
+            "status": "VARCHAR(20) DEFAULT 'pending'",
+            "created_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+        },
+        "response_log": {
             "response_id": "UUID PRIMARY KEY DEFAULT gen_random_uuid()",
             "request_id": "UUID REFERENCES request_queue(request_id)",
-            "result": "TEXT",
-            "confidence": "NUMERIC(5,2)",
-            "processed_at": "TIMESTAMP DEFAULT NOW()"
-        }
-    },
-    "session_slots": {
-        "columns": {
+            "model_used": "VARCHAR(50)",
+            "sentiment": "VARCHAR(20)",
+            "confidence": "FLOAT",
+            "created_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+        },
+        "session_slots": {
             "slot_id": "INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY",
             "tier": "SMALLINT NOT NULL CHECK (tier IN (1,2,3))",
             "is_active": "BOOLEAN DEFAULT TRUE",
             "current_user": "UUID REFERENCES users(user_id)",
             "started_at": "TIMESTAMP",
             "expires_at": "TIMESTAMP"
-        }
-    },
-    "system_log": {
-        "columns": {
-            "log_id": "UUID PRIMARY KEY DEFAULT gen_random_uuid()",
-            "log_type": "VARCHAR(50)",
-            "message": "TEXT",
-            "created_at": "TIMESTAMP DEFAULT NOW()"
-        }
-    },
-    "tier_config": {
-        "columns": {
-            "tier": "SMALLINT PRIMARY KEY",
-            "max_requests": "INT DEFAULT 5",
-            "max_batch": "INT DEFAULT 10",
-            "wait_time": "INT DEFAULT 900",
-            "description": "TEXT"
+        },
+        "tier_config": {
+            "tier_id": "SMALLINT PRIMARY KEY",
+            "name": "VARCHAR(50)",
+            "max_requests_per_day": "INT",
+            "batch_limit": "INT",
+            "wait_time_minutes": "INT"
+        },
+        "system_log": {
+            "log_id": "BIGSERIAL PRIMARY KEY",
+            "event": "TEXT",
+            "details": "TEXT",
+            "created_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
         }
     }
-}
 
+    conn = get_connection()
+    for table, columns in expected_tables.items():
+        cols_sql = ", ".join([f"{col} {dtype}" for col, dtype in columns.items()])
+        conn.execute(text(f"CREATE TABLE IF NOT EXISTS {table} ({cols_sql});"))
 
-def validate_tables():
-    with engine.connect() as conn:
-        for table, info in TABLE_SCHEMAS.items():
-            print(f"🔍 Checking table: {table}")
+    # --- AUTO-SEED SESSION SLOTS ---
+    result = conn.execute(text("SELECT COUNT(*) FROM session_slots;")).scalar()
+    if result == 0:
+        conn.execute(text("""
+            INSERT INTO session_slots (tier, is_active)
+            VALUES (1, TRUE), (2, TRUE), (3, TRUE);
+        """))
+        print("🌱 Seeded session_slots successfully!")
 
-            # Cek apakah tabel sudah ada
-            result = conn.execute(
-                text("SELECT to_regclass(:tname)"), {"tname": table}
-            ).scalar()
-
-            if not result:
-                print(f"⚠️ Table {table} not found. Creating...")
-                columns = ", ".join([f"{col} {dtype}" for col, dtype in info["columns"].items()])
-                conn.execute(text(f"CREATE TABLE {table} ({columns});"))
-                conn.commit()
-                print(f"✅ Table {table} created.")
-            else:
-                # Cek kolom per kolom
-                existing_cols = conn.execute(
-                    text("""
-                        SELECT column_name FROM information_schema.columns
-                        WHERE table_name = :tname
-                    """), {"tname": table}).fetchall()
-                existing_cols = [r[0] for r in existing_cols]
-
-                for col, dtype in info["columns"].items():
-                    if col not in existing_cols:
-                        # Deteksi tipe kolom kompleks
-                        if any(keyword in dtype for keyword in ["REFERENCES", "GENERATED", "CHECK"]):
-                            print(f"⚠️ Skipping complex column '{col}' on {table} (manual creation required)")
-                            continue
-                        try:
-                            conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {dtype};"))
-                            conn.commit()
-                            print(f"➕ Added column '{col}' to {table}")
-                        except Exception as e:
-                            print(f"❌ Failed to add column '{col}' on {table}: {e}")
-                print(f"✅ Table {table} validated.")
-        print("🎉 Database validation finished.")
+    conn.commit()
+    conn.close()
+    print("✅ Database schema validated or auto-fixed!")
